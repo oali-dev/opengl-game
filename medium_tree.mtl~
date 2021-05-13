@@ -1,0 +1,50 @@
+# Blender MTL File: 'terrain7.blend'
+# Material Count: 4
+
+newmtl bark_brown
+Ns 176.470588
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.025249 0.025249 0.025249
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd textures\Bark_Tile.jpg
+map_Bump textures\\bark-oldbrown-n.png
+
+newmtl bark_brown_NONE
+Ns 176.470588
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.025249 0.025249 0.025249
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd textures\\bark-oldbrown-c.png
+map_Bump textures\\bark-oldbrown-n.png
+
+newmtl leaf_oak_green
+Ns 96.078431
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.500000 0.500000 0.500000
+Ni 1.000000
+d 0.000000
+illum 2
+map_Kd textures\oak-branch-c.png
+map_Ks textures\\oak-branch-c.png
+map_Bump textures\\oak-branch-n.png
+map_d textures\\oak-branch-a.png
+
+newmtl leaf_oak_green_leaf-mapple-yellow-c.
+Ns 96.078431
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.500000 0.500000 0.500000
+Ni 1.000000
+d 0.000000
+illum 2
+map_Kd textures\leaf-mapple-yellow-c.png
+map_Ks textures\\oak-branch-c.png
+map_Bump textures\\oak-branch-n.png
+map_d textures\\oak-branch-a.png

@@ -1,0 +1,12 @@
+# Blender MTL File: 'terrain6.blend'
+# Material Count: 1
+
+newmtl ivy_leaves
+Ns 96.078431
+Ka 0.000000 0.000000 0.000000
+Kd 0.142823 0.727647 0.500528
+Ks 0.586957 0.586957 0.586957
+Ni 1.000000
+d 0.000000
+illum 2
+map_Kd ivy_leaves_a.png

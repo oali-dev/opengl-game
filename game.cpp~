@@ -1,0 +1,640 @@
+#include <iostream>
+#include "game.hpp"
+#include "shader.hpp"
+#include "mesh.hpp"
+#include "mesh_list.hpp"
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/type_ptr.hpp"
+#include "glm/gtc/matrix_inverse.hpp"
+
+Game::Game()
+	: m_skybox("interstellar_up.tga", "interstellar_dn.tga", "interstellar_rt.tga", 
+			   "interstellar_lf.tga", "interstellar_bk.tga", "interstellar_ft.tga"),
+	  m_gravity(9.81),
+	  cameraAngleHorizontal(0.0f),
+	  cameraAngleVertical(30.0f),
+	  cameraDistance(80.0f),
+	  cameraHeight(80.0f),
+	  cameraRotationSpeed(1.8f)
+{
+}
+
+Game::~Game()
+{
+}
+
+void Game::initializeProgram()
+{
+	//std::vector<GLuint> shaderList;
+
+	//std::string vertexShaderCode = parseShader("vertexshader.glsl");
+	//std::string fragmentShaderCode = parseShader("fragmentshader.glsl");
+
+	//shaderList.push_back(createShader(GL_VERTEX_SHADER, vertexShaderCode));
+	//shaderList.push_back(createShader(GL_FRAGMENT_SHADER, fragmentShaderCode));
+
+	//programID = createProgram(shaderList);
+
+	//programID = LoadShaders("diffuse.vert", "diffuse.frag");
+	programID = LoadShaders("toon.vert", "toon.frag");
+	skyboxProgramID = LoadShaders("skybox.vert", "skybox.frag");
+	frameBufferProgramID = LoadShaders("sobel_outline.vert", "sobel_outline.frag");
+
+	samplerUnif = glGetUniformLocation(programID, "sampler");
+	lightPositionUnif = glGetUniformLocation(programID, "LightPosition");
+	kaUnif = glGetUniformLocation(programID, "Ka");
+	kdUnif = glGetUniformLocation(programID, "Kd");
+	ksUnif = glGetUniformLocation(programID, "Ks");
+	shininessUnif = glGetUniformLocation(programID, "shininess");
+	laUnif = glGetUniformLocation(programID, "La");
+	ldUnif = glGetUniformLocation(programID, "Ld");
+	lsUnif = glGetUniformLocation(programID, "Ls");
+	modelViewMatrixUnif = glGetUniformLocation(programID, "ModelViewMatrix");
+	normalMatrixUnif = glGetUniformLocation(programID, "NormalMatrix");
+	projectionMatrixUnif = glGetUniformLocation(programID, "ProjectionMatrix");
+	MVPUnif = glGetUniformLocation(programID, "MVP");
+
+	skyboxMVPUnif = glGetUniformLocation(skyboxProgramID, "MVP");
+	skyboxSamplerUnif = glGetUniformLocation(skyboxProgramID, "CubeMap");
+	for(int i = 0; i < MAX_BONES; i++)
+	{
+		char Name[128];
+		memset(Name, 0, sizeof(Name));
+		SNPRINTF(Name, sizeof(Name), "boneMatrices[%d]", i);
+		boneMatricesUnif[i] = glGetUniformLocation(programID, Name);
+		//std::cerr << boneMatricesUnif[i] << std::endl;
+		/*std::string boneMatricesPosition = "boneMatrices[";
+		ss << i;
+		boneMatricesPosition += ss.str();
+		boneMatricesPosition += "]";
+		ss.str(std::string());
+		ss.clear();
+		std::cerr << boneMatricesPosition << std::endl;
+		boneMatricesUnif[i] = glGetUniformLocation(programID, boneMatricesPosition.c_str());*/
+	}
+	isDynamicUnif = glGetUniformLocation(programID, "isDynamic");
+
+	fbTextureUnif = glGetUniformLocation(frameBufferProgramID, "renderedTexture");
+	fbTimeUnif = glGetUniformLocation(frameBufferProgramID, "time");
+	
+	glm::vec4 lightPosition(0.0f, 4.0f, 5.0f, 1.0f);
+	glm::vec3 ka(0.6f, 0.8f, 0.8f);
+	glm::vec3 kd(0.6f, 0.8f, 0.8f);
+	glm::vec3 ks(0.6f, 0.8f, 0.9f);
+	float shininess = 10.0;
+	glm::vec3 la(0.6f, 0.8f, 0.8f);
+	glm::vec3 ld(0.6f, 0.6f, 0.8f);
+	glm::vec3 ls(0.7f, 0.7f, 0.9f);
+	
+	projectionMatrix = glm::perspective(45.0f, 4.0f/3.0f, 0.1f, 10000.f);
+
+	glUseProgram(programID);
+	glUniform1i(samplerUnif, 0);
+	glUniform4fv(lightPositionUnif, 1, glm::value_ptr(lightPosition));
+	glUniform3fv(kaUnif, 1, glm::value_ptr(ka));
+	glUniform3fv(kdUnif, 1, glm::value_ptr(kd));
+	glUniform3fv(ksUnif, 1, glm::value_ptr(ks));
+	glUniform1f(shininessUnif, shininess);
+	glUniform3fv(laUnif, 1, glm::value_ptr(la));
+	glUniform3fv(ldUnif, 1, glm::value_ptr(ld));
+	glUniform3fv(lsUnif, 1, glm::value_ptr(ls));
+	glUniformMatrix4fv( projectionMatrixUnif, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
+	glUseProgram(0);
+
+	glUseProgram(skyboxProgramID);
+	glUniform1i(skyboxSamplerUnif, 1);
+
+	//std::for_each(shaderList.begin(), shaderList.end(), glDeleteShader);
+}
+
+void Game::display()
+{
+	// clear the screen
+	glClearColor(0.0, 0.0, 0.0, 0.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// use our shader program
+	glUseProgram(programID);
+
+	viewMatrix = glm::lookAt(cameraPos, // world space pos of camera
+						     m_player->getTransform() + glm::vec3(0.0f, 30.0f, 0.0f),// where to look at
+							 glm::vec3(0.0, 1.0f, 0.0f));   // up direction
+	glUniform1i(isDynamicUnif, 0);
+
+	// Render all our static meshes
+	for(std::vector<StaticRenderable*>::iterator it = m_static_renderables.begin();
+		it != m_static_renderables.end();
+		it++)
+	{
+		glm::mat4 modelMatrix = (*it)->getTranslation() * (*it)->getRotation() * (*it)->getScale();
+		glm::mat4 modelViewMatrix = viewMatrix * modelMatrix;
+		glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(modelViewMatrix));
+		glm::mat4 MVP = projectionMatrix * modelViewMatrix;
+
+		glUniformMatrix4fv( modelViewMatrixUnif, 1, GL_FALSE, glm::value_ptr(modelViewMatrix));
+		glUniformMatrix3fv( normalMatrixUnif, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+		glUniformMatrix4fv( MVPUnif, 1, GL_FALSE, glm::value_ptr(MVP));
+
+		(*it)->render();
+	}
+
+	glUniform1i(isDynamicUnif, 1);
+
+	// Render all our dynamic meshes
+	for(std::vector<DynamicRenderable*>::iterator it = m_dynamic_renderables.begin();
+		it != m_dynamic_renderables.end();
+		it++)
+	{
+		glm::mat4 modelMatrix = (*it)->getTranslation() * (*it)->getRotation() * (*it)->getScale();
+		glm::mat4 modelViewMatrix = viewMatrix * modelMatrix;
+		glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(modelViewMatrix));
+		glm::mat4 MVP = projectionMatrix * modelViewMatrix;
+
+		glUniformMatrix4fv( modelViewMatrixUnif, 1, GL_FALSE, glm::value_ptr(modelViewMatrix));
+		glUniformMatrix3fv( normalMatrixUnif, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+		glUniformMatrix4fv( MVPUnif, 1, GL_FALSE, glm::value_ptr(MVP));
+		
+		(*it)->UpdateTransforms(m_clock.getElapsedTime().asSeconds());
+		for(unsigned int i = 0; i < (*it)->getTransforms().size(); i++)
+		{
+			glUniformMatrix4fv(boneMatricesUnif[i], 1, GL_TRUE,
+							   (const GLfloat*)(*it)->getTransforms()[i].m);
+		}
+
+		(*it)->render();
+	}
+
+	glm::mat4 modelMatrix = m_player->getTranslation() * m_player->getRotation() * m_player->getScale();
+	glm::mat4 modelViewMatrix = viewMatrix * modelMatrix;
+	glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(modelViewMatrix));
+	glm::mat4 MVP = projectionMatrix * modelViewMatrix;
+
+	glUniformMatrix4fv( modelViewMatrixUnif, 1, GL_FALSE, glm::value_ptr(modelViewMatrix));
+	glUniformMatrix3fv( normalMatrixUnif, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+	glUniformMatrix4fv( MVPUnif, 1, GL_FALSE, glm::value_ptr(MVP));
+		
+	m_player->UpdateTransforms(m_clock.getElapsedTime().asSeconds());
+	for(unsigned int i = 0; i < m_player->getTransforms().size(); i++)
+	{
+		glUniformMatrix4fv(boneMatricesUnif[i], 1, GL_TRUE,
+						   (const GLfloat*)m_player->getTransforms()[i].m);
+	}
+
+	m_player->render();
+
+	glm::mat4 skyboxMVP = projectionMatrix * 
+						  viewMatrix * 
+						  glm::translate(glm::mat4(1.0f), cameraPos - glm::vec3(0, 20, 0)) *
+						  skyboxScale;
+	glUseProgram(skyboxProgramID);
+	glUniformMatrix4fv(skyboxMVPUnif, 1, GL_FALSE, glm::value_ptr(skyboxMVP));
+	m_skybox.render();
+
+	glUseProgram(0);
+}
+
+int Game::startGame()
+{
+    // create the window
+    m_window.create(sf::VideoMode(600, 600), "OpenGL", sf::Style::Default, sf::ContextSettings(32));
+    m_window.setVerticalSyncEnabled(true);
+
+	glewExperimental = true;
+	if(glewInit() != GLEW_OK)
+	{
+		std::cerr << "Failed to initialize GLEW" << std::endl;
+		return -1;
+	}
+
+    // load resources, initialize the OpenGL states, ...
+	init();
+
+	gameLoop();
+
+	return 0;
+}
+
+void Game::init()
+{
+	m_skybox.init();
+	skyboxScale = glm::scale(glm::mat4(1.0f), glm::vec3(50.0f, 50.0f, 50.0f));
+	cameraPos = glm::vec3(0.0f, 30.0f, 80.0f);
+	
+	loadAllMeshes();
+	
+	m_player = player_renderable;
+	m_static_renderables = static_renderables;
+	m_dynamic_renderables = dynamic_renderables;
+
+	for(std::vector<btRigidBody*>::iterator it = static_rigidbodies.begin();
+	    it != static_rigidbodies.end();
+	    it++)
+	{
+		dynamicsWorld->addRigidBody( (*it) );
+	}
+
+	btTransform startTransform;
+	startTransform.setIdentity();
+	startTransform.setOrigin(btVector3(15.0, 10.0, 0.0));
+	ghostObject = new btPairCachingGhostObject();
+	ghostObject->setWorldTransform(startTransform);
+	overlappingPairCache->getOverlappingPairCache()->
+		setInternalGhostPairCallback(new btGhostPairCallback());
+	btConvexShape* capsule = new btCapsuleShape(2.0, 7.0);
+	ghostObject->setCollisionShape(capsule);
+	ghostObject->setCollisionFlags(btCollisionObject::CF_CHARACTER_OBJECT);
+	btScalar stepHeight = btScalar(1.5);
+	character = new btKinematicCharacterController(ghostObject, capsule, stepHeight);
+	dynamicsWorld->addCollisionObject(ghostObject, btBroadphaseProxy::CharacterFilter, 
+									  btBroadphaseProxy::StaticFilter | btBroadphaseProxy::DefaultFilter);
+	dynamicsWorld->addAction(character);
+
+	/*btTransform startTransform2;
+	startTransform2.setIdentity();
+	startTransform2.setOrigin(btVector3(50.0, 20.0, 0.0));
+	ghostObject2 = new btPairCachingGhostObject();
+	ghostObject2->setWorldTransform(startTransform2);
+	overlappingPairCache->getOverlappingPairCache()->
+		setInternalGhostPairCallback(new btGhostPairCallback());
+	btConvexShape* capsule2 = new btCapsuleShape(2.0, 7.0);
+	ghostObject2->setCollisionShape(capsule2);
+	ghostObject2->setCollisionFlags(btCollisionObject::CF_CHARACTER_OBJECT);
+	btScalar stepHeight2 = btScalar(0.5);
+	btKinematicCharacterController* snake = new btKinematicCharacterController(ghostObject2, 
+											   	capsule2, stepHeight2);
+	dynamicsWorld->addCollisionObject(ghostObject2, btBroadphaseProxy::CharacterFilter, 
+									  btBroadphaseProxy::StaticFilter | btBroadphaseProxy::DefaultFilter);
+	dynamicsWorld->addAction(snake);*/
+
+	/*for(int i = 0; i < 2000; i++)
+	{
+		dynamicsWorld->stepSimulation(1.0f/60.0f, 10);
+
+		btTransform trans;
+		fallRigidBody->getMotionState()->getWorldTransform(trans);
+		std::cout << "sphere height: " << trans.getOrigin().getY() << std::endl;
+	}*/
+
+	initializeProgram();
+	initFramebuffer();
+	//initializeVertexBuffer();
+
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
+	glFrontFace(GL_CCW);
+
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LEQUAL);
+	glDepthRange(0.0f, 1.0f);
+
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glEnable(GL_BLEND);
+}
+
+void Game::gameLoop()
+{
+	// start the game clock
+	m_clock.restart();
+
+    // run the main loop
+    bool running = true;
+    while (running)
+    {
+		dynamicsWorld->stepSimulation(1.0f/60.0f, 10);
+		btTransform trans;
+		trans = ghostObject->getWorldTransform();
+		//fallRigidBody->getMotionState()->getWorldTransform(trans);
+		//std::cerr << trans.getOrigin().getY() << std::endl;
+		m_player->setTransform(trans.getOrigin().getX(), trans.getOrigin().getY() - 5.5f, 
+							   trans.getOrigin().getZ());
+		for(std::vector<DynamicRenderable*>::iterator it = m_dynamic_renderables.begin();
+		    it != m_dynamic_renderables.end();
+		    it++)
+		{
+			trans = (*it)->getController()->getWorldTransform();
+			(*it)->setTransform(trans.getOrigin().getX(), trans.getOrigin().getY() - 5.5f, 
+					    trans.getOrigin().getZ());	
+			(*it)->move();	
+		}
+		std::cerr << m_player->getTransform().x << " " << m_player->getTransform().y << " "
+			  << m_player->getTransform().z << std::endl;
+		//trans = ghostObject2->getWorldTransform();
+		//snake_renderable->setTransform(trans.getOrigin().getX(), trans.getOrigin().getY() - 
+		//			                   5.5f, trans.getOrigin().getZ());
+		//snake_renderable->move();
+		
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
+		{
+			// end the program
+			running = false;
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::R))
+		{
+			btTransform original_position;
+			original_position.setIdentity();
+			original_position.setOrigin(btVector3(15.0, -45.9, 0.0078));
+			ghostObject->setWorldTransform(original_position);
+		}
+		//once movement is working, multiply by deltatime
+		// to do: create a dirty flag for movement so we
+		// don't necessarily move every single draw call
+
+		float axisPosX = sf::Joystick::getAxisPosition(0, sf::Joystick::X) / 100.0f;
+		float axisPosY = sf::Joystick::getAxisPosition(0, sf::Joystick::Y) / 100.0f;
+		btVector3 movement_direction(axisPosX / 1.5f, btScalar(0), axisPosY / 1.5f);
+		
+		// The joysticks are very sensitive, so we set the movement direction to 0
+		// if the axis position is below a certain threshold
+		if(fabs(movement_direction.getX()) < 0.2)
+		{
+			movement_direction.setX(btScalar(0));
+		}
+		if(fabs(movement_direction.getZ()) < 0.2)
+		{
+			movement_direction.setZ(btScalar(0));
+		}
+		if(movement_direction.getX() || movement_direction.getZ())
+		{
+			m_player->setRotation(atan2(movement_direction.getZ(), 
+										 -movement_direction.getX()) - 3.14f/2.0f + 
+										 cameraAngleHorizontal * 3.14f/180.0f);
+		}
+
+		float cameraAxisX = sf::Joystick::getAxisPosition(0, sf::Joystick::U) / 100.0f;
+		float cameraAxisY = sf::Joystick::getAxisPosition(0, sf::Joystick::V) / 100.0f;
+
+		if(fabs(cameraAxisX) > 0.2f)
+		{
+			cameraAngleHorizontal -= cameraAxisX * cameraRotationSpeed;
+		}
+		if(fabs(cameraAxisY) > 0.2f)
+		{
+			cameraAngleVertical += cameraAxisY * cameraRotationSpeed;
+			if(cameraAngleVertical > 90.0f)
+				cameraAngleVertical = 90.0f;
+			if(cameraAngleVertical < 0.0f)
+				cameraAngleVertical = 0.0f;
+		}
+
+		/*if(sf::Keyboard::isKeyPressed(sf::Keyboard::Up))
+		{
+			//mesh2.AnimateNodes(m_clock.getElapsedTime().asSeconds());
+			movement_direction.setZ(-0.5);
+			//character->setWalkDirection(btVector3(0.0, 0.0, -0.5));
+			//fallRigidBody->setLinearVelocity(btVector3(0.0f, 0.0f, -1.0f));
+			m_player->rotateForward();
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Down))
+		{
+			movement_direction.setZ(0.5);
+			//character->setWalkDirection(btVector3(0.0, 0.0, 0.5));
+			m_player->rotateBackward();
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Left))
+		{
+			movement_direction.setX(-0.5);
+			//character->setWalkDirection(btVector3(-0.5, 0.0, 0.0));
+			m_player->rotateLeft();
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Right))
+		{
+			movement_direction.setX(0.5);
+			//character->setWalkDirection(btVector3(0.5, 0.0, 0.0));
+			m_player->rotateRight();
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
+		{
+			//character->jump();
+		}*/
+		if(movement_direction.isZero())
+		{
+			m_player->setAnimation(0);
+			character->setGravity(btScalar(0));
+		}
+		else
+		{
+			m_player->setAnimation(1);
+			character->setGravity(m_gravity);
+		}
+
+		/*if(sf::Keyboard::isKeyPressed(sf::Keyboard::F))
+			m_player->setAnimation(2);
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::G))
+			m_player->setAnimation(3);*/
+
+		btQuaternion camera_orientation(btVector3(0.0f, 1.0f, 0.0f), cameraAngleHorizontal * 3.14f/180.0f);
+		btMatrix3x3 rotationMatrix(camera_orientation);
+		movement_direction = rotationMatrix * movement_direction; 
+
+		character->setWalkDirection(movement_direction * 2);
+		m_player->move();
+
+		cameraPos.x = cameraDistance * sin(cameraAngleHorizontal * 3.14f/180.0f) + m_player->getTransform().x;
+		cameraPos.y = cameraHeight * sin(cameraAngleVertical * 3.14f/180.0f) + 
+					  m_player->getTransform().y * 0.7;
+		cameraPos.z = cameraDistance * cos(cameraAngleHorizontal * 3.14f/180.0f) + m_player->getTransform().z;
+
+        // handle events
+        sf::Event event;
+        while (m_window.pollEvent(event))
+        {
+			if (event.type == sf::Event::Closed)
+            {
+                // end the program
+                running = false;
+            }
+            else if (event.type == sf::Event::Resized)
+            {
+                // adjust the viewport when the window is resized
+				projectionMatrix = glm::perspective(45.0f, 
+													(float)event.size.width / (float)event.size.height, 
+													0.1f, 
+													10000.f);
+				glUseProgram(programID);
+				glUniformMatrix4fv( projectionMatrixUnif, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
+				glUseProgram(0);
+
+				glBindTexture(GL_TEXTURE_2D, frameBufferTexture);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, event.size.width, event.size.height,
+				 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+				glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
+				glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, 
+									  m_window.getSize().x, m_window.getSize().y);
+				glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
+
+                glViewport(0, 0, event.size.width, event.size.height);
+				//initFramebuffer();
+            }
+
+        }
+
+		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // display our image
+		display();
+	
+		glDisable(GL_BLEND);
+		glBindFramebuffer(GL_FRAMEBUFFER, frameBufferObject);
+		display();
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		glUseProgram(frameBufferProgramID);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, frameBufferTexture);
+		glUniform1i(fbTextureUnif, 0);
+		glUniform1f(fbTimeUnif, m_clock.getElapsedTime().asSeconds());
+
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, frameBufferQuadVBO);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+		glDisableVertexAttribArray(0);
+		glUseProgram(0);
+		glEnable(GL_BLEND);
+
+        // end the current frame (internally swaps the front and back buffers)
+        m_window.display();
+    }
+
+    // release resources...
+	delete dynamicsWorld;
+	delete solver;
+	delete overlappingPairCache;
+	delete dispatcher;
+	delete collisionConfiguration;
+}
+
+void Game::initFramebuffer()
+{
+	glGenFramebuffers(1, &frameBufferObject);
+	glBindFramebuffer(GL_FRAMEBUFFER, frameBufferObject);
+
+	glGenTextures(1, &frameBufferTexture);
+	glBindTexture(GL_TEXTURE_2D, frameBufferTexture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_window.getSize().x, m_window.getSize().y,
+				 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+
+	glGenRenderbuffers(1, &depthBuffer);
+	glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, 
+						  m_window.getSize().x, m_window.getSize().y);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
+
+	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, frameBufferTexture, 0);
+
+	GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT0};
+	glDrawBuffers(1, drawBuffers);
+
+	if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
+		std::cerr << "Could not initialize framebuffer." << std::endl;
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	glGenVertexArrays(1, &frameBufferQuadVAO);
+	glBindVertexArray(frameBufferQuadVAO);
+
+	const GLfloat frameBufferQuadVertices[] =
+	{
+		-1.0f, -1.0f, 0.0f,
+		1.0f, -1.0f, 0.0f,
+		-1.0f, 1.0f, 0.0f,
+		-1.0f, 1.0f, 0.0f,
+		1.0f, -1.0f, 0.0f,
+		1.0f, 1.0f, 0.0f,
+	};
+
+	glGenBuffers(1, &frameBufferQuadVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, frameBufferQuadVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(frameBufferQuadVertices), 
+				 frameBufferQuadVertices, GL_STATIC_DRAW);
+}
+
+GLuint Game::createShader(GLenum eShaderType, const std::string &strShaderFile)
+{
+	GLuint shader = glCreateShader(eShaderType);
+	const char *strFileData = strShaderFile.c_str();
+	glShaderSource(shader, 1, &strFileData, NULL);
+
+	glCompileShader(shader);
+
+	GLint status;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+	if (status == GL_FALSE)
+	{
+		GLint infoLogLength;
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLogLength);
+
+		GLchar *strInfoLog = new GLchar[infoLogLength + 1];
+		glGetShaderInfoLog(shader, infoLogLength, NULL, strInfoLog);
+
+		const char *strShaderType = NULL;
+		switch(eShaderType)
+		{
+		case GL_VERTEX_SHADER: strShaderType = "vertex"; break;
+		case GL_GEOMETRY_SHADER: strShaderType = "geometry"; break;
+		case GL_FRAGMENT_SHADER: strShaderType = "fragment"; break;
+		}
+
+		fprintf(stderr, "Compile failure in %s shader:\n%s\n", strShaderType, strInfoLog);
+		delete[] strInfoLog;
+	}
+
+	return shader;
+}
+
+GLuint Game::createProgram(const std::vector<GLuint> &shaderList)
+{
+	GLuint program = glCreateProgram();
+
+	for(size_t iLoop = 0; iLoop < shaderList.size(); iLoop++)
+		glAttachShader(program, shaderList[iLoop]);
+
+	glLinkProgram(program);
+
+	GLint status;
+	glGetProgramiv (program, GL_LINK_STATUS, &status);
+	if (status == GL_FALSE)
+	{
+		GLint infoLogLength;
+		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &infoLogLength);
+
+		GLchar *strInfoLog = new GLchar[infoLogLength + 1];
+		glGetProgramInfoLog(program, infoLogLength, NULL, strInfoLog);
+		fprintf(stderr, "Linker failure: %s\n", strInfoLog);
+		delete[] strInfoLog;
+	}
+
+	for(size_t iLoop = 0; iLoop < shaderList.size(); iLoop++)
+		glDetachShader(program, shaderList[iLoop]);
+
+	return program;
+}
+
+std::string Game::parseShader(const char* filename)
+{
+	std::string ShaderCode;
+	std::ifstream ShaderStream(filename, std::ios::in);
+	if(ShaderStream.is_open())
+	{
+		std::string Line = "";
+		while(getline(ShaderStream, Line))
+		{
+			ShaderCode += "\n" + Line;
+		}
+		ShaderStream.close();
+	}
+	else
+	{
+		std::cerr << "Could not open shader file" << std::endl;
+		return "";
+	}
+
+	return ShaderCode;
+}

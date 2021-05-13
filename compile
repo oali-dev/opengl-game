@@ -1,0 +1,4 @@
+#!/bin/tcsh
+
+g++ -c main.cpp game.cpp shader.cpp mesh.cpp texture.cpp renderable.cpp math_3d.cpp skybox.cpp particlesystem.cpp -I ~/SFML-2.0-rc/include -I ~/assimp--3.0.1270-sdk/include -I ~/bullet/src
+g++ main.o game.o shader.o mesh.o texture.o renderable.o math_3d.o skybox.o particlesystem.o -o game -L GL -lGLEW -L ~/SFML-2.0-rc/lib -lGL -lGLU -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio -L ~/assimp--3.0.1270-sdk/lib -lassimp -L ~/bullet/src/BulletDynamics -lBulletDynamics -L ~/bullet/src/BulletCollision -lBulletCollision -L ~/bullet/src/LinearMath -lLinearMath

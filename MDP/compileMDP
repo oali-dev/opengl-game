@@ -1,0 +1,4 @@
+#!/bin/tsch
+
+g++ -c MDP.cpp -I ~/SFML-2.0-rc/include
+g++ MDP.o -o mdp -L ~/SFML-2.0-rc/lib -lsfml-graphics

@@ -1,0 +1,39 @@
+# Blender MTL File: 'terrain5.blend'
+# Material Count: 3
+
+newmtl Bark_mossy
+Ns 96.078431
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 1
+map_Kd textures\Bark_Tile.jpg
+map_Bump textures\\BarkMossy-tiled-n.png
+
+newmtl leaf_mapple_yellow
+Ns 96.078431
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.500000 0.500000 0.500000
+Ni 1.000000
+d 0.000000
+illum 2
+map_Kd textures\leaf-mapple-yellow-c.png
+map_Ks textures\\leaf-mapple-green-yellow-c.png
+map_Bump textures\\leaf-mapple-yellow-ni.png
+map_d textures\\leaf-mapple-yellow-a.png
+
+newmtl leaf_mapple_yellow_oak-branch-c.png
+Ns 96.078431
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.500000 0.500000 0.500000
+Ni 1.000000
+d 0.000000
+illum 2
+map_Kd textures\oak-branch-c.png
+map_Ks textures\\leaf-mapple-green-yellow-c.png
+map_Bump textures\\leaf-mapple-yellow-ni.png
+map_d textures\\leaf-mapple-yellow-a.png
